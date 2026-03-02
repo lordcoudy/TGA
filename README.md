@@ -30,6 +30,25 @@ npm run dev
 # open http://localhost:3000
 ```
 
+### Docker
+
+```bash
+# Create a .env file with your Telegram API credentials (optional)
+echo "TELEGRAM_API_ID=YOUR_API_ID" >> .env
+echo "TELEGRAM_API_HASH=YOUR_API_HASH" >> .env
+
+# Build and run
+docker compose up --build
+
+# open http://localhost:3000
+```
+
+To run in detached mode:
+
+```bash
+docker compose up -d --build
+```
+
 ### How it works
 
 - Upload a Telegram export (Settings → Advanced → Export Data → JSON). The file is read in the browser and sent to `/api/analyze`.
