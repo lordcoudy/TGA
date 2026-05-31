@@ -127,6 +127,49 @@ const STOP_WORDS = new Set([
 	"should",
 	"about",
 	"rt",
+	"и",
+	"в",
+	"во",
+	"не",
+	"что",
+	"он",
+	"на",
+	"я",
+	"с",
+	"со",
+	"как",
+	"а",
+	"то",
+	"все",
+	"она",
+	"так",
+	"его",
+	"но",
+	"да",
+	"ты",
+	"к",
+	"у",
+	"же",
+	"вы",
+	"за",
+	"бы",
+	"по",
+	"только",
+	"ее",
+	"мне",
+	"было",
+	"вот",
+	"от",
+	"меня",
+	"еще",
+	"нет",
+	"о",
+	"из",
+	"ему",
+	"теперь",
+	"когда",
+	"даже",
+	"ну",
 ]);
 
 const emojiMatcher = emojiRegex();
@@ -185,9 +228,16 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 	let minDate: string | null = null;
 	let maxDate: string | null = null;
 
-	let prevDate: Date | null = null;
+	let previousDatedMessage: { date: Date; author: string } | null = null;
 
-	const messages = chat.messages || [];
+	const messages = [...(chat.messages || [])].sort((left, right) => {
+		const leftDate = getMessageDate(left);
+		const rightDate = getMessageDate(right);
+		if (!leftDate && !rightDate) return 0;
+		if (!leftDate) return 1;
+		if (!rightDate) return -1;
+		return leftDate.localeCompare(rightDate);
+	});
 
 	for (const message of messages) {
 		if (message.type && message.type !== "message") continue;
@@ -212,8 +262,8 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 				const weekday = parsedDate.getUTCDay();
 				weekdayCounts.set(weekday, (weekdayCounts.get(weekday) || 0) + 1);
 
-				if (prevDate) {
-					const diffMs = parsedDate.getTime() - prevDate.getTime();
+				if (previousDatedMessage && previousDatedMessage.author !== author) {
+					const diffMs = parsedDate.getTime() - previousDatedMessage.date.getTime();
 					const thresholdMs = quickReplyWindowMinutes * 60 * 1000;
 					if (diffMs > 0 && diffMs <= thresholdMs) {
 						const current = quickReplyHours.get(author) || { sumHours: 0, count: 0 };
@@ -223,7 +273,15 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 						});
 					}
 				}
+				previousDatedMessage = { date: parsedDate, author };
 			}
+		}
+
+		const stickerEmoji = message.sticker_emoji
+			|| (message as { stickerEmoji?: string }).stickerEmoji
+			|| (message as { media_emoji?: string }).media_emoji;
+		if (stickerEmoji) {
+			stickerCounts.set(stickerEmoji, (stickerCounts.get(stickerEmoji) || 0) + 1);
 		}
 
 		const text = normalizeText(message.text ?? "");
@@ -258,17 +316,6 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 			emojiCounts.set(emoji, (emojiCounts.get(emoji) || 0) + 1);
 		}
 
-		const stickerEmoji = (message as { sticker_emoji?: string; stickerEmoji?: string; media_emoji?: string }).sticker_emoji
-			|| (message as { stickerEmoji?: string }).stickerEmoji
-			|| (message as { media_emoji?: string }).media_emoji;
-		if (stickerEmoji) {
-			stickerCounts.set(stickerEmoji, (stickerCounts.get(stickerEmoji) || 0) + 1);
-		}
-
-		if (messageDate) {
-			const parsedDate = new Date(messageDate);
-			prevDate = Number.isNaN(parsedDate.valueOf()) ? null : parsedDate;
-		}
 	}
 
 	const daySeriesResult = toTimeSeriesWithWeeklyAggregation(dayCounts, weeklyBucketThreshold);
@@ -278,7 +325,7 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 	const totalStickers = sumCounts(stickerCounts);
 
 	return {
-		chatId: String(chat.id ?? chat.name ?? Math.random().toString(36).slice(2)),
+		chatId: String(chat.id ?? chat.name ?? "untitled-chat"),
 		title: chat.name || "Untitled chat",
 		type: chat.type || "group",
 		messageCount: processedMessages,
@@ -354,7 +401,7 @@ function stripLinks(text: string): { cleaned: string; links: string[] } {
 }
 
 function normalizeLink(link: string) {
-	return link.replace(/[),.]+$/, "");
+	return link.replace(/[)\],.!?:;]+$/, "");
 }
 
 function extractWords(text: string): string[] {

@@ -1,31 +1,33 @@
+import { and, eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
 import { exportChatHistory } from "@/lib/mtproto";
 import { analyzeTelegramExport } from "@/lib/telegram";
-import { NextResponse, type NextRequest } from "next/server";
-
-export const runtime = "nodejs";
+import { decryptSecret } from "@/lib/server/crypto";
+import { db } from "@/lib/server/db";
+import { telegramConnections } from "@/lib/server/schema";
+import { clientIp, errorResponse, rateLimit, requireMutationSecurity, requireUser } from "@/lib/server/security";
+import { exportSchema } from "@/lib/server/validation";
 
 export async function POST(req: NextRequest) {
 	try {
-		const { phone, session, chat, limit = 1000, testDc = false, quickReplyMinutes } = await req.json();
-
-		if (!phone) return NextResponse.json({ error: "phone is required" }, { status: 400 });
-		if (!chat) return NextResponse.json({ error: "chat is required" }, { status: 400 });
-
-		const exported = await exportChatHistory({ phone, session, chat, limit, testDc });
-		const analysis = analyzeTelegramExport(
-			{ export: { name: exported.name, chats: [exported] }, options: { quickReplyMinutes } },
-		);
-
-		return NextResponse.json({
-			exported,
-			analysis,
+		const user = await requireUser(req);
+		requireMutationSecurity(req, user.csrfToken);
+		await rateLimit(`export:${user.id}:${clientIp(req)}`, 10, 60 * 60);
+		const input = exportSchema.parse(await req.json());
+		const [connection] = await db.select().from(telegramConnections)
+			.where(and(eq(telegramConnections.id, input.connectionId), eq(telegramConnections.userId, user.id))).limit(1);
+		if (!connection) return Response.json({ error: "Telegram connection not found." }, { status: 404 });
+		const exported = await exportChatHistory({
+			session: decryptSecret(connection.encryptedSession),
+			chat: input.chat,
+			limit: input.limit,
 		});
-	} catch (error: unknown) {
-		return NextResponse.json({ error: getMessage(error) }, { status: 400 });
+		const analysis = analyzeTelegramExport({
+			export: { name: exported.name, chats: [exported] },
+			options: { quickReplyMinutes: input.quickReplyMinutes },
+		});
+		return Response.json({ analysis });
+	} catch (error) {
+		return errorResponse(error);
 	}
-}
-
-function getMessage(error: unknown) {
-	if (error instanceof Error) return error.message;
-	return "Failed to export chat";
 }

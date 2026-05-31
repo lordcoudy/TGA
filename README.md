@@ -1,75 +1,53 @@
-# Disclaimer
+# Telegram Chat Analytics
 
-This project was fully made with Github Copilot. It is provided as-is without any guarantees. Use at your own risk. I saw https://github.com/Pankajtanwarbanna/ping-perfect and got an idea to try something similar for Telegram. This website does not store or share any data; all analysis is done in-memory on the server.
+Public multi-user Telegram chat analytics with privacy-first JSON uploads and optional server-side MTProto fetching.
 
-## Telegram Chat Analytics
+## Privacy model
 
-Upload a Telegram JSON export, pick a chat, and explore message activity, word usage, emoji frequency, participants, and per-word search. The backend API parses the export and returns aggregated stats only.
+- Uploaded Telegram JSON exports are parsed in the browser and are never sent to the server.
+- MTProto fetching temporarily processes messages on the server and returns only aggregates.
+- Raw messages are never stored in Postgres.
+- Reports are stored only after an explicit user action and can be deleted from the UI.
+- MTProto session strings are encrypted with AES-256-GCM and never returned to the browser.
 
-### MTProto (optional, server-side fetch)
+## Setup
 
-Set environment variables in `.env.local` (do not commit secrets):
-
-```
-TELEGRAM_API_ID=YOUR_API_ID
-TELEGRAM_API_HASH=YOUR_API_HASH
-```
-
-API routes:
-- `POST /api/mtproto/send-code` — body `{ phone, testDc?: boolean }`
-- `POST /api/mtproto/sign-in` — body `{ phone, code, password?: string }` (returns `session` string)
-- `POST /api/mtproto/export` — body `{ phone, session, chat, limit?: number, testDc?: boolean }`; returns `exported` + `analysis`
-
-Usage flow: send code → sign in (store session string securely) → export chat by username/link/id. Sessions are kept in-memory only; persist the returned session if you need reuse.
-
-### Quick start
+Run the interactive setup script:
 
 ```bash
-npm install
-npm run dev
-# open http://localhost:3000
+npm run setup
 ```
 
-### Docker
+It creates or updates `.env`, generates the encryption key when needed, starts Postgres and Redis, installs dependencies, applies migrations, and launches either the local development server or the complete Docker stack.
+
+Telegram credentials may be left blank when only browser-side JSON analysis is needed. Configure Telegram API credentials and Telegram OIDC credentials from BotFather to enable accounts, saved reports, and MTProto fetching.
+
+Open `http://localhost:3000`.
+
+## Services
+
+- Next.js App Router UI and API
+- Postgres with Drizzle ORM for users, web sessions, encrypted Telegram connections, and aggregate reports
+- Redis for OIDC state, MTProto code state, and API rate limiting
+
+## Scripts
+
+- `npm run dev` - local development server
+- `npm run lint` - ESLint
+- `npm test` - Vitest unit tests
+- `npm run test:e2e` - Playwright browser tests
+- `npm run build` - production build
+- `npm run db:migrate` - apply Drizzle migrations
+- `npm run setup` - interactive configuration and launcher
+
+The launcher can also be scripted:
 
 ```bash
-# Create a .env file with your Telegram API credentials (optional)
-echo "TELEGRAM_API_ID=YOUR_API_ID" >> .env
-echo "TELEGRAM_API_HASH=YOUR_API_HASH" >> .env
-
-# Build and run
-docker compose up --build
-
-# open http://localhost:3000
+./scripts/setup-and-run.sh --mode dev
+./scripts/setup-and-run.sh --mode docker
+./scripts/setup-and-run.sh --mode configure --dry-run
 ```
 
-To run in detached mode:
+## Production notes
 
-```bash
-docker compose up -d --build
-```
-
-### How it works
-
-- Upload a Telegram export (Settings → Advanced → Export Data → JSON). The file is read in the browser and sent to `/api/analyze`.
-- The API parses chats, flattens message text, counts words (with stop words filtered), emojis, per-day activity, and participants. It returns chat-level aggregates and word-frequency maps for on-page search.
-- The UI lets you select a chat, search for a word, and view infographics for words, emojis, authors, and daily activity.
-
-### Tech stack
-
-- Next.js App Router, TypeScript, Tailwind CSS (v4)
-- API route at `src/app/api/analyze/route.ts`
-- Analysis utilities in `src/lib/telegram.ts`
-
-### Scripts
-
-- `npm run dev` — start the dev server
-- `npm run build` — production build
-- `npm run start` — run the production server
-- `npm run lint` — lint the project
-
-### Notes
-
-- Data stays in-memory; no persistence is implemented.
-- Word search is case-insensitive and uses the aggregated frequency map returned per chat.
-- MTProto endpoints run server-side (Node runtime) and require valid Telegram API credentials and an interactive sign-in. For production, add persistence/encryption for session strings.
+Set `TELEGRAM_OIDC_REDIRECT_URI` to the deployed HTTPS callback and register it in BotFather. Run migrations before starting the application. Put the app behind an HTTPS reverse proxy and back up Postgres. Rotate `TELEGRAM_SESSION_ENCRYPTION_KEY` only with a planned re-encryption migration.

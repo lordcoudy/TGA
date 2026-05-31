@@ -6,24 +6,40 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:migrate": "drizzle-kit migrate",
+    "setup": "bash ./scripts/setup-and-run.sh"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "emoji-regex": "^10.6.0",
     "html2canvas": "^1.4.1",
-    "next": "16.1.3",
+    "ioredis": "^5.11.0",
+    "jose": "^6.2.3",
+    "next": "^16.2.6",
+    "postgres": "^3.4.9",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "telegram": "^2.22.2"
+    "telegram": "^2.22.2",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.1.3",
+    "eslint-config-next": "^16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "tsx": "^4.22.4",
+    "typescript": "^5",
+    "vitest": "^4.1.7"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

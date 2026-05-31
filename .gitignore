@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/.nyc_output
 
 # next.js
 /.next/
@@ -19,19 +23,29 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
 *.pem
+*.swp
+*.swo
+*~
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+*.log
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -39,3 +53,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local tool caches
+/.cache
+/.eslintcache
+/.parcel-cache
+/.turbo
+/.vite
+
+# editor settings
+/.idea
+/.vscode
+
+# local Docker overrides
+docker-compose.override.yml
+compose.override.yml
