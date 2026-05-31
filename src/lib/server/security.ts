@@ -2,8 +2,11 @@ import "server-only";
 
 import { and, eq, gt } from "drizzle-orm";
 import type { NextRequest } from "next/server";
+import { validateMutationSecurity } from "../mutation-security";
+import { telegramOidcAppOrigin } from "../oidc-url";
 import { db } from "./db";
 import { sha256 } from "./crypto";
+import { optionalEnv } from "./env";
 import { redis } from "./redis";
 import { users, webSessions } from "./schema";
 
@@ -60,10 +63,10 @@ export async function requireUser(req: NextRequest): Promise<AuthenticatedUser> 
 }
 
 export function requireMutationSecurity(req: NextRequest, csrfToken: string) {
-	const origin = req.headers.get("origin");
-	const expected = new URL(req.url).origin;
-	if (!origin || origin !== expected) throw new HttpError(403, "Invalid request origin.");
-	if (req.headers.get("x-csrf-token") !== csrfToken) throw new HttpError(403, "Invalid CSRF token.");
+	const callbackUrl = optionalEnv("TELEGRAM_OIDC_REDIRECT_URI", "http://localhost:3000/api/auth/telegram/callback");
+	const error = validateMutationSecurity(req.headers, telegramOidcAppOrigin(callbackUrl), csrfToken);
+	if (error === "origin") throw new HttpError(403, "Invalid request origin.");
+	if (error === "csrf") throw new HttpError(403, "Invalid CSRF token.");
 }
 
 export function clientIp(req: NextRequest): string {

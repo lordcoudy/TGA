@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { telegramOidcAppUrl } from "../oidc-url";
+import { telegramOidcAppOrigin, telegramOidcAppUrl } from "../oidc-url";
 
 describe("telegramOidcAppUrl", () => {
 	it("returns the public origin from the configured callback URL", () => {
+		expect(telegramOidcAppOrigin("https://tga.savva-balashov.me/api/auth/telegram/callback"))
+			.toBe("https://tga.savva-balashov.me");
 		expect(telegramOidcAppUrl("https://tga.savva-balashov.me/api/auth/telegram/callback").toString())
 			.toBe("https://tga.savva-balashov.me/");
 	});
