@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 import { optionalEnv, requireEnv } from "./env";
 import { telegramFetch } from "./telegram-proxy";
+export { telegramOidcAppUrl } from "../oidc-url";
 
 const jwks = createRemoteJWKSet(new URL("https://oauth.telegram.org/.well-known/jwks.json"), {
 	[customFetch]: async (url, options) => telegramFetch(url, options) as unknown as Promise<Response>,

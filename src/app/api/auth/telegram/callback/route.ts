@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/lib/server/db";
 import { randomToken, sha256 } from "@/lib/server/crypto";
-import { exchangeTelegramCode, verifyTelegramIdToken } from "@/lib/server/oidc";
+import { exchangeTelegramCode, telegramOidcAppUrl, telegramOidcConfig, verifyTelegramIdToken } from "@/lib/server/oidc";
 import { redis } from "@/lib/server/redis";
 import { users, webSessions } from "@/lib/server/schema";
 import { OIDC_COOKIE, SESSION_COOKIE, errorResponse, sessionCookieOptions, sessionExpiry } from "@/lib/server/security";
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 		const csrfToken = randomToken();
 		const expiresAt = sessionExpiry();
 		await db.insert(webSessions).values({ userId: user.id, tokenHash: sha256(token), csrfToken, expiresAt });
-		const response = NextResponse.redirect(new URL("/", req.url));
+		const response = NextResponse.redirect(telegramOidcAppUrl(telegramOidcConfig().redirectUri));
 		response.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(expiresAt));
 		response.cookies.delete(OIDC_COOKIE);
 		return response;
