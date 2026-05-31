@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { analyzeTelegramExport, type AnalysisResult } from "@/lib/telegram";
+import type { AnalysisResult } from "@/lib/telegram";
+import type { AnalyzeTelegramWorkerResponse } from "@/workers/analyze-telegram-export";
 import AuthPanel, { type WebUser } from "./AuthPanel";
 import { downloadCsv, downloadPng } from "./exporters";
 import { getDictionary, type Locale } from "./i18n";
@@ -9,7 +10,7 @@ import MtprotoPanel from "./MtprotoPanel";
 import ReportsPanel from "./ReportsPanel";
 import StatsDashboard from "./StatsDashboard";
 
-const MAX_JSON_BYTES = 50 * 1024 * 1024;
+const MAX_JSON_BYTES = 500 * 1024 * 1024;
 
 export default function DashboardApp() {
 	const [locale, setLocale] = useState<Locale>("ru");
@@ -20,6 +21,7 @@ export default function DashboardApp() {
 	const [word, setWord] = useState("");
 	const [user, setUser] = useState<WebUser | null>(null);
 	const [status, setStatus] = useState("");
+	const [analyzingFile, setAnalyzingFile] = useState(false);
 	const exportRef = useRef<HTMLDivElement>(null);
 	const dict = getDictionary(locale);
 	const selectedChat = analysis?.chats.find((chat) => chat.chatId === selectedChatId) || analysis?.chats[0] || null;
@@ -38,14 +40,16 @@ export default function DashboardApp() {
 		setSelectedChatId(next.chats[0]?.chatId || "");
 	}
 	async function readFile(file: File) {
+		if (analyzingFile) return;
 		try {
-			if (file.size > MAX_JSON_BYTES) throw new Error("JSON file exceeds the 50 MB browser limit.");
-			const parsed = JSON.parse(await file.text());
-			const next = analyzeTelegramExport({ export: parsed, options: { quickReplyMinutes } });
-			if (!next.chats.length) throw new Error("No chats with messages found.");
+			if (file.size > MAX_JSON_BYTES) throw new Error("JSON file exceeds the 500 MB browser limit.");
+			setAnalyzingFile(true);
+			setStatus("Analyzing JSON locally in your browser...");
+			const next = await analyzeFileInWorker(file, quickReplyMinutes);
 			applyAnalysis(next, "json");
 			setStatus("");
 		} catch (error) { setStatus(error instanceof Error ? error.message : "Could not read JSON."); }
+		finally { setAnalyzingFile(false); }
 	}
 
 	return (
@@ -59,7 +63,7 @@ export default function DashboardApp() {
 				<section className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-2">
 					<label className="flex min-h-28 cursor-pointer items-center justify-center rounded-xl border border-dashed border-slate-300 p-4 text-center" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) void readFile(file); }}>
 						<input hidden type="file" accept="application/json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void readFile(file); }} />
-						<span><strong>{dict.upload}</strong><br /><small>{dict.drop}</small></span>
+						<span><strong>{analyzingFile ? "Analyzing..." : dict.upload}</strong><br /><small>{dict.drop}</small></span>
 					</label>
 					<label className="grid gap-2 text-sm">{dict.quickWindow}<input type="number" min={1} max={1440} value={quickReplyMinutes} onChange={(event) => setQuickReplyMinutes(Math.max(1, Math.min(1440, Number(event.target.value) || 1)))} className="rounded-lg border p-2" /></label>
 				</section>
@@ -79,4 +83,20 @@ export default function DashboardApp() {
 
 function Metric({ label, value }: { label: string; value: number }) {
 	return <div className="rounded-xl border bg-white p-4"><div className="text-xs uppercase text-slate-500">{label}</div><strong className="text-2xl">{value.toLocaleString()}</strong></div>;
+}
+
+function analyzeFileInWorker(file: File, quickReplyMinutes: number): Promise<AnalysisResult> {
+	return new Promise((resolve, reject) => {
+		const worker = new Worker(new URL("../../workers/analyze-telegram-export.ts", import.meta.url));
+		worker.onmessage = (event: MessageEvent<AnalyzeTelegramWorkerResponse>) => {
+			worker.terminate();
+			if (event.data.ok) resolve(event.data.analysis);
+			else reject(new Error(event.data.error));
+		};
+		worker.onerror = (event) => {
+			worker.terminate();
+			reject(new Error(event.message || "Telegram export analysis worker failed."));
+		};
+		worker.postMessage({ file, quickReplyMinutes });
+	});
 }
