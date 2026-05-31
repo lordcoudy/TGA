@@ -24,6 +24,7 @@
     "postgres": "^3.4.9",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "socks": "^2.8.9",
     "socks-proxy-agent": "^8.0.5",
     "telegram": "^2.22.2",
     "zod": "^4.4.3"
