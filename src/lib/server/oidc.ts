@@ -29,15 +29,22 @@ export async function exchangeTelegramCode(code: string, verifier: string): Prom
 		code_verifier: verifier,
 	});
 	const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
-	const response = await fetch("https://oauth.telegram.org/token", {
-		method: "POST",
-		headers: {
-			"content-type": "application/x-www-form-urlencoded",
-			authorization: `Basic ${credentials}`,
-		},
-		body,
-		cache: "no-store",
-	});
+	let response: Response;
+	try {
+		response = await fetch("https://oauth.telegram.org/token", {
+			method: "POST",
+			headers: {
+				"content-type": "application/x-www-form-urlencoded",
+				authorization: `Basic ${credentials}`,
+			},
+			body,
+			cache: "no-store",
+			signal: AbortSignal.timeout(10_000),
+		});
+	} catch (error) {
+		console.error("Telegram OIDC token endpoint request failed", error);
+		throw new Error("Cannot reach https://oauth.telegram.org/token from the server. Check outbound HTTPS access, firewall, or proxy settings.");
+	}
 	if (!response.ok) throw new Error("Telegram login token exchange failed.");
 	const payload = await response.json() as { id_token?: string };
 	if (!payload.id_token) throw new Error("Telegram login response did not include an ID token.");

@@ -51,6 +51,46 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+wait_for_docker() {
+  local attempt
+  for attempt in {1..90}; do
+    if docker info >/dev/null 2>&1; then
+      return
+    fi
+    sleep 1
+  done
+  die "Docker daemon did not become ready within 90 seconds. Start Docker Desktop and retry."
+}
+
+ensure_docker_daemon() {
+  require_command docker
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    return
+  fi
+  if docker info >/dev/null 2>&1; then
+    return
+  fi
+
+  if [[ "$(uname -s)" == "Darwin" ]] && [[ -d "/Applications/Docker.app" ]]; then
+    printf 'Docker daemon is not running. Start Docker Desktop now? [Y/n]: '
+    local answer
+    IFS= read -r answer
+    case "${answer:-Y}" in
+      y|Y|yes|YES)
+        log "Start Docker Desktop"
+        run open -a Docker
+        if [[ "$DRY_RUN" -eq 0 ]]; then
+          log "Wait for Docker daemon"
+          wait_for_docker
+        fi
+        return
+        ;;
+    esac
+  fi
+
+  die "Docker daemon is not running. Start Docker Desktop and retry."
+}
+
 env_value() {
   local key="$1"
   local value
@@ -152,7 +192,7 @@ install_dependencies() {
 }
 
 start_data_services() {
-  require_command docker
+  ensure_docker_daemon
   log "Start Postgres and Redis"
   run docker compose up -d db redis
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -160,13 +200,24 @@ start_data_services() {
   fi
   log "Wait for Postgres"
   local attempt
-  for attempt in {1..30}; do
+  for attempt in {1..60}; do
     if docker compose exec -T db pg_isready -U tga -d tga >/dev/null 2>&1; then
       return
     fi
+    if [[ -z "$(docker compose ps --status running -q db)" ]]; then
+      printf '\nPostgres container is not running. Container status:\n' >&2
+      docker compose ps -a db >&2 || true
+      printf '\nRecent Postgres logs:\n' >&2
+      docker compose logs --tail=80 db >&2 || true
+      die "Postgres container stopped before becoming ready."
+    fi
     sleep 1
   done
-  die "Postgres did not become ready within 30 seconds."
+  printf '\nPostgres readiness timed out. Container status:\n' >&2
+  docker compose ps -a db >&2 || true
+  printf '\nRecent Postgres logs:\n' >&2
+  docker compose logs --tail=80 db >&2 || true
+  die "Postgres did not become ready within 60 seconds."
 }
 
 migrate_database() {

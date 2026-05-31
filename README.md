@@ -48,6 +48,10 @@ The launcher can also be scripted:
 ./scripts/setup-and-run.sh --mode configure --dry-run
 ```
 
+### Docker troubleshooting
+
+The launcher requires a running Docker daemon to start Postgres and Redis. On macOS, if Docker Desktop is installed but stopped, the script offers to open it and waits up to 90 seconds for the daemon. If Postgres fails to start, the script prints the container status and recent database logs instead of returning a generic readiness timeout.
+
 ## Production notes
 
 Set `TELEGRAM_OIDC_REDIRECT_URI` to the deployed HTTPS callback and register it in BotFather. Run migrations before starting the application. Put the app behind an HTTPS reverse proxy and back up Postgres. Rotate `TELEGRAM_SESSION_ENCRYPTION_KEY` only with a planned re-encryption migration.
