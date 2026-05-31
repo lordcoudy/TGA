@@ -113,6 +113,8 @@ export async function exportChatHistory({ session, chat, limit = 1000, testDc = 
 				from: getSenderName(message),
 				from_id: message.fromId ? stringifyPeer(message.fromId) : undefined,
 				text: message.message || "",
+				reply_to_message_id: message.replyToMsgId,
+				reply_to_top_id: message.replyTo instanceof Api.MessageReplyHeader ? message.replyTo.replyToTopId : undefined,
 			})),
 		};
 	} finally {

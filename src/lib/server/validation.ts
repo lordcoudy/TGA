@@ -3,6 +3,32 @@ import "server-only";
 import { z } from "zod";
 
 const countItem = z.object({ count: z.number().nonnegative() }).strict();
+const responseTimeBucketSchema = z.enum(["<1m", "1-5m", "5-15m", "15-60m", "1-6h", "6-24h", ">24h"]);
+const dialogueThreadSchema = z.object({
+	starter: z.string(),
+	descendants: z.number().int().nonnegative(),
+	depth: z.number().int().nonnegative(),
+	nodes: z.array(z.object({
+		id: z.string(),
+		parentId: z.string().nullable(),
+		author: z.string(),
+		depth: z.number().int().nonnegative(),
+	}).strict()).max(100),
+	truncated: z.boolean(),
+}).strict();
+const dialogueStatsSchema = z.object({
+	explicitReplies: z.number().int().nonnegative(),
+	inferredReplies: z.number().int().nonnegative(),
+	totalReplies: z.number().int().nonnegative(),
+	replyShare: z.number().min(0).max(1),
+	unresolvedReplies: z.number().int().nonnegative(),
+	medianResponseMinutes: z.number().nonnegative().nullable(),
+	responseTimeBuckets: z.array(z.object({ label: responseTimeBucketSchema, count: z.number().int().nonnegative() }).strict()).length(7),
+	averageThreadDepth: z.number().nonnegative(),
+	maxThreadDepth: z.number().int().nonnegative(),
+	topStarters: z.array(z.object({ name: z.string(), descendants: z.number().int().nonnegative(), threads: z.number().int().nonnegative() }).strict()).max(10),
+	largestThreads: z.array(dialogueThreadSchema).max(5),
+}).strict();
 const analysisResultSchema = z.object({
 	title: z.string(),
 	chatCount: z.number().int().nonnegative(),
@@ -31,6 +57,7 @@ const analysisResultSchema = z.object({
 		totals: z.object({ words: z.number(), emojis: z.number(), stickers: z.number(), links: z.number() }).strict(),
 		linkCount: z.number().nonnegative(),
 		avgLength: z.object({ characters: z.number(), words: z.number() }).strict(),
+		dialogues: dialogueStatsSchema.optional(),
 	}).strict()),
 }).strict();
 

@@ -1,28 +1,32 @@
 "use client";
 
 import type { ChatStats } from "@/lib/telegram";
+import DialoguesDashboard from "./DialoguesDashboard";
 import type { getDictionary } from "./i18n";
 
 type Dictionary = ReturnType<typeof getDictionary>;
 
 export default function StatsDashboard({ chat, dict }: { chat: ChatStats; dict: Dictionary }) {
 	return (
-		<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-			<ListCard title={dict.words} items={chat.topWords.map((item) => [item.word, item.count])} />
-			<ListCard title={dict.emojis} items={chat.topEmojis.map((item) => [item.emoji, item.count])} />
-			<ListCard title={dict.stickers} items={chat.topStickers.map((item) => [item.sticker, item.count])} />
-			<ListCard title={dict.domains} items={chat.topDomains.map((item) => [item.domain, item.count])} />
-			<ListCard title={dict.quickReplies} items={chat.perUserQuickReplies.map((item) => [`${item.name} (${item.avgHour.toFixed(1)} UTC)`, item.count])} />
-			<Card title={dict.daily}>
-				<div className="flex h-28 items-end gap-1 overflow-x-auto">
-					{chat.perDay.slice(-90).map((item) => <Bar key={item.date} label={item.date} value={item.count} max={Math.max(...chat.perDay.map((day) => day.count), 1)} />)}
-				</div>
-			</Card>
-			<Card title={dict.hourly}>
-				<div className="flex h-28 items-end gap-1">
-					{chat.perHour.map((item) => <Bar key={item.hour} label={`${item.hour}:00`} value={item.count} max={Math.max(...chat.perHour.map((hour) => hour.count), 1)} />)}
-				</div>
-			</Card>
+		<div className="space-y-4">
+			<DialoguesDashboard dialogues={chat.dialogues} dict={dict} />
+			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+				<ListCard title={dict.words} items={chat.topWords.map((item) => [item.word, item.count])} />
+				<ListCard title={dict.emojis} items={chat.topEmojis.map((item) => [item.emoji, item.count])} />
+				<ListCard title={dict.stickers} items={chat.topStickers.map((item) => [item.sticker, item.count])} />
+				<ListCard title={dict.domains} items={chat.topDomains.map((item) => [item.domain, item.count])} />
+				<ListCard title={dict.quickReplies} items={chat.perUserQuickReplies.map((item) => [`${item.name} (${item.avgHour.toFixed(1)} UTC)`, item.count])} />
+				<Card title={dict.daily}>
+					<div className="flex h-28 items-end gap-1 overflow-x-auto">
+						{chat.perDay.slice(-90).map((item) => <Bar key={item.date} label={item.date} value={item.count} max={Math.max(...chat.perDay.map((day) => day.count), 1)} />)}
+					</div>
+				</Card>
+				<Card title={dict.hourly}>
+					<div className="flex h-28 items-end gap-1">
+						{chat.perHour.map((item) => <Bar key={item.hour} label={`${item.hour}:00`} value={item.count} max={Math.max(...chat.perHour.map((hour) => hour.count), 1)} />)}
+					</div>
+				</Card>
+			</div>
 		</div>
 	);
 }

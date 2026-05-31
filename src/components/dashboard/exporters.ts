@@ -9,6 +9,20 @@ export function downloadCsv(chat: ChatStats) {
 	add("emojis", chat.topEmojis.map(({ emoji, count }) => ({ label: emoji, count })));
 	add("stickers", chat.topStickers.map(({ sticker, count }) => ({ label: sticker, count })));
 	add("domains", chat.topDomains.map(({ domain, count }) => ({ label: domain, count })));
+	if (chat.dialogues) {
+		rows.push(
+			["dialogues", "explicit_replies", String(chat.dialogues.explicitReplies)],
+			["dialogues", "inferred_replies", String(chat.dialogues.inferredReplies)],
+			["dialogues", "total_replies", String(chat.dialogues.totalReplies)],
+			["dialogues", "reply_share", String(chat.dialogues.replyShare)],
+			["dialogues", "unresolved_replies", String(chat.dialogues.unresolvedReplies)],
+			["dialogues", "median_response_minutes", String(chat.dialogues.medianResponseMinutes ?? "")],
+			["dialogues", "average_thread_depth", String(chat.dialogues.averageThreadDepth)],
+			["dialogues", "max_thread_depth", String(chat.dialogues.maxThreadDepth)],
+		);
+		add("dialogue_response_times", chat.dialogues.responseTimeBuckets);
+		add("dialogue_starters", chat.dialogues.topStarters.map(({ name, descendants }) => ({ label: name, count: descendants })));
+	}
 	const csv = "\ufeff" + rows.map((row) => row.map(csvValue).join(",")).join("\n");
 	triggerDownload(URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })), `${safeFilename(chat.title)}.csv`, true);
 }

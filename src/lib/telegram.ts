@@ -18,7 +18,7 @@ export type ChatExport = {
 };
 
 export type RawMessage = {
-	id?: number;
+	id?: number | string;
 	type?: string;
 	date?: string | number;
 	date_unixtime?: string | number;
@@ -26,6 +26,8 @@ export type RawMessage = {
 	from_id?: string;
 	text?: RawText;
 	sticker_emoji?: string;
+	reply_to_message_id?: number | string;
+	reply_to_top_id?: number | string;
 };
 
 type RawText = string | RawTextNode[];
@@ -66,7 +68,32 @@ export type ChatStats = {
 	};
 	linkCount: number;
 	avgLength: { characters: number; words: number };
+	dialogues?: DialogueStats;
 };
+
+export type DialogueStats = {
+	explicitReplies: number;
+	inferredReplies: number;
+	totalReplies: number;
+	replyShare: number;
+	unresolvedReplies: number;
+	medianResponseMinutes: number | null;
+	responseTimeBuckets: { label: ResponseTimeBucket; count: number }[];
+	averageThreadDepth: number;
+	maxThreadDepth: number;
+	topStarters: { name: string; descendants: number; threads: number }[];
+	largestThreads: DialogueThread[];
+};
+
+export type DialogueThread = {
+	starter: string;
+	descendants: number;
+	depth: number;
+	nodes: { id: string; parentId: string | null; author: string; depth: number }[];
+	truncated: boolean;
+};
+
+export type ResponseTimeBucket = "<1m" | "1-5m" | "5-15m" | "15-60m" | "1-6h" | "6-24h" | ">24h";
 
 export type AnalysisResult = {
 	title: string;
@@ -238,6 +265,7 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 		if (!rightDate) return -1;
 		return leftDate.localeCompare(rightDate);
 	});
+	const dialogueStats = buildDialogueStats(messages, quickReplyWindowMinutes);
 
 	for (const message of messages) {
 		if (message.type && message.type !== "message") continue;
@@ -262,7 +290,7 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 				const weekday = parsedDate.getUTCDay();
 				weekdayCounts.set(weekday, (weekdayCounts.get(weekday) || 0) + 1);
 
-				if (previousDatedMessage && previousDatedMessage.author !== author) {
+				if (!hasExplicitReply(message) && previousDatedMessage && previousDatedMessage.author !== author) {
 					const diffMs = parsedDate.getTime() - previousDatedMessage.date.getTime();
 					const thresholdMs = quickReplyWindowMinutes * 60 * 1000;
 					if (diffMs > 0 && diffMs <= thresholdMs) {
@@ -374,7 +402,177 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 			characters: textMessageCount === 0 ? 0 : Math.round(totalChars / textMessageCount),
 			words: textMessageCount === 0 ? 0 : Math.round(totalWords / textMessageCount),
 		},
+		dialogues: dialogueStats,
 	};
+}
+
+function buildDialogueStats(
+	messages: RawMessage[],
+	quickReplyWindowMinutes: number,
+): DialogueStats {
+	const analyzableMessages = messages.filter((message) => !message.type || message.type === "message");
+	const indexed = new Map<string, RawMessage>();
+	for (const message of analyzableMessages) {
+		const id = messageKey(message.id);
+		if (id) indexed.set(id, message);
+	}
+
+	let explicitReplies = 0;
+	let unresolvedReplies = 0;
+	let inferredReplies = 0;
+	let previousDatedMessage: { date: Date; author: string } | null = null;
+	const responseMinutes: number[] = [];
+
+	for (const message of analyzableMessages) {
+		const author = messageAuthor(message);
+		const replyId = messageKey(message.reply_to_message_id);
+		if (replyId) {
+			explicitReplies += 1;
+			const parent = indexed.get(replyId);
+			if (!parent) {
+				unresolvedReplies += 1;
+			} else if (messageAuthor(parent) !== author) {
+				const delay = minutesBetween(parent, message);
+				if (delay !== null && delay >= 0) responseMinutes.push(delay);
+			}
+		}
+
+		const date = parsedMessageDate(message);
+		if (date) {
+			if (!replyId && previousDatedMessage && previousDatedMessage.author !== author) {
+				const delay = (date.getTime() - previousDatedMessage.date.getTime()) / 60000;
+				if (delay > 0 && delay <= quickReplyWindowMinutes) inferredReplies += 1;
+			}
+			previousDatedMessage = { date, author };
+		}
+	}
+
+	const threadSummaries = buildThreadSummaries(analyzableMessages, indexed);
+	const starterCounts = new Map<string, { descendants: number; threads: number }>();
+	for (const thread of threadSummaries) {
+		const starter = starterCounts.get(thread.starter) || { descendants: 0, threads: 0 };
+		starter.descendants += thread.descendants;
+		starter.threads += 1;
+		starterCounts.set(thread.starter, starter);
+	}
+	const topStarters = Array.from(starterCounts.entries())
+		.map(([name, totals]) => ({ name, ...totals }))
+		.sort((left, right) => right.descendants - left.descendants || right.threads - left.threads || left.name.localeCompare(right.name))
+		.slice(0, 10);
+	const threadDepthTotal = threadSummaries.reduce((sum, thread) => sum + thread.depth, 0);
+
+	return {
+		explicitReplies,
+		inferredReplies,
+		totalReplies: explicitReplies + inferredReplies,
+		replyShare: analyzableMessages.length === 0 ? 0 : Number(((explicitReplies + inferredReplies) / analyzableMessages.length).toFixed(4)),
+		unresolvedReplies,
+		medianResponseMinutes: median(responseMinutes),
+		responseTimeBuckets: buildResponseTimeBuckets(responseMinutes),
+		averageThreadDepth: threadSummaries.length === 0 ? 0 : Number((threadDepthTotal / threadSummaries.length).toFixed(2)),
+		maxThreadDepth: threadSummaries.reduce((max, thread) => Math.max(max, thread.depth), 0),
+		topStarters,
+		largestThreads: threadSummaries
+			.sort((left, right) => right.descendants - left.descendants || right.depth - left.depth)
+			.slice(0, 5),
+	};
+}
+
+function buildThreadSummaries(messages: RawMessage[], indexed: Map<string, RawMessage>): DialogueThread[] {
+	const children = new Map<string, RawMessage[]>();
+	for (const message of messages) {
+		const replyId = messageKey(message.reply_to_message_id);
+		if (!replyId || !indexed.has(replyId)) continue;
+		const siblings = children.get(replyId) || [];
+		siblings.push(message);
+		children.set(replyId, siblings);
+	}
+
+	const summaries: DialogueThread[] = [];
+	for (const root of messages) {
+		const rootId = messageKey(root.id);
+		if (!rootId || hasExplicitReply(root) || !children.has(rootId)) continue;
+		const nodes: DialogueThread["nodes"] = [];
+		const seen = new Set<string>();
+		const stack = [{ message: root, parentId: null as string | null, depth: 0 }];
+		let descendants = 0;
+		let maxDepth = 0;
+		let truncated = false;
+		while (stack.length > 0) {
+			const current = stack.pop();
+			if (!current) break;
+			const currentId = messageKey(current.message.id);
+			if (!currentId || seen.has(currentId)) continue;
+			seen.add(currentId);
+			const syntheticId = `n${seen.size}`;
+			if (nodes.length < 100) {
+				nodes.push({ id: syntheticId, parentId: current.parentId, author: messageAuthor(current.message), depth: current.depth });
+			} else {
+				truncated = true;
+			}
+			if (current.depth > 0) descendants += 1;
+			maxDepth = Math.max(maxDepth, current.depth);
+			const childMessages = children.get(currentId) || [];
+			for (let index = childMessages.length - 1; index >= 0; index -= 1) {
+				stack.push({ message: childMessages[index], parentId: syntheticId, depth: current.depth + 1 });
+			}
+		}
+		if (descendants > 0) {
+			summaries.push({ starter: messageAuthor(root), descendants, depth: maxDepth, nodes, truncated });
+		}
+	}
+	return summaries;
+}
+
+function messageKey(value: number | string | undefined) {
+	return value === undefined || value === null || value === "" ? null : String(value);
+}
+
+function hasExplicitReply(message: RawMessage) {
+	return messageKey(message.reply_to_message_id) !== null;
+}
+
+function messageAuthor(message: RawMessage) {
+	return message.from || message.from_id || "Unknown";
+}
+
+function parsedMessageDate(message: RawMessage) {
+	const value = getMessageDate(message);
+	if (!value) return null;
+	const date = new Date(value);
+	return Number.isNaN(date.valueOf()) ? null : date;
+}
+
+function minutesBetween(parent: RawMessage, reply: RawMessage) {
+	const parentDate = parsedMessageDate(parent);
+	const replyDate = parsedMessageDate(reply);
+	if (!parentDate || !replyDate) return null;
+	return (replyDate.getTime() - parentDate.getTime()) / 60000;
+}
+
+function median(values: number[]) {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((left, right) => left - right);
+	const middle = Math.floor(sorted.length / 2);
+	const value = sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+	return Number(value.toFixed(2));
+}
+
+function buildResponseTimeBuckets(values: number[]) {
+	const buckets: { label: ResponseTimeBucket; count: number }[] = [
+		{ label: "<1m", count: 0 },
+		{ label: "1-5m", count: 0 },
+		{ label: "5-15m", count: 0 },
+		{ label: "15-60m", count: 0 },
+		{ label: "1-6h", count: 0 },
+		{ label: "6-24h", count: 0 },
+		{ label: ">24h", count: 0 },
+	];
+	for (const value of values) {
+		const index = value < 1 ? 0 : value < 5 ? 1 : value < 15 ? 2 : value < 60 ? 3 : value < 360 ? 4 : value < 1440 ? 5 : 6;
+		buckets[index].count += 1;
+	}
+	return buckets;
 }
 
 function normalizeText(text: RawText): string {
