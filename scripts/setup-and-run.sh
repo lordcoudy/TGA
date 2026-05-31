@@ -152,6 +152,7 @@ write_env() {
     printf 'TELEGRAM_OIDC_CLIENT_ID=%s\n' "$(dotenv_escape "$TELEGRAM_OIDC_CLIENT_ID")"
     printf 'TELEGRAM_OIDC_CLIENT_SECRET=%s\n' "$(dotenv_escape "$TELEGRAM_OIDC_CLIENT_SECRET")"
     printf 'TELEGRAM_OIDC_REDIRECT_URI=%s\n' "$(dotenv_escape "$TELEGRAM_OIDC_REDIRECT_URI")"
+    printf 'TELEGRAM_SOCKS_PROXY_URL=%s\n' "$(dotenv_escape "$TELEGRAM_SOCKS_PROXY_URL")"
     printf 'DATABASE_URL=%s\n' "$(dotenv_escape "$DATABASE_URL")"
     printf 'REDIS_URL=%s\n' "$(dotenv_escape "$REDIS_URL")"
   } > "$tmp"
@@ -169,6 +170,7 @@ configure_env() {
   prompt_value TELEGRAM_OIDC_CLIENT_ID "Telegram OIDC client ID"
   prompt_value TELEGRAM_OIDC_CLIENT_SECRET "Telegram OIDC client secret" "" 1
   prompt_value TELEGRAM_OIDC_REDIRECT_URI "Telegram OIDC callback URL" "http://localhost:3000/api/auth/telegram/callback"
+  prompt_value TELEGRAM_SOCKS_PROXY_URL "Telegram SOCKS5 proxy URL (optional, socks5h://user:password@host:port)" "" 1
   prompt_value DATABASE_URL "Local Postgres URL" "postgres://tga:tga@localhost:5432/tga"
   prompt_value REDIS_URL "Local Redis URL" "redis://localhost:6379"
 
@@ -179,6 +181,14 @@ configure_env() {
     log "Generated TELEGRAM_SESSION_ENCRYPTION_KEY"
   fi
   write_env
+}
+
+check_telegram_proxy() {
+  if [[ -z "$TELEGRAM_SOCKS_PROXY_URL" ]]; then
+    return
+  fi
+  log "Check Telegram SOCKS5 proxy"
+  run npm run proxy:check
 }
 
 install_dependencies() {
@@ -232,6 +242,7 @@ migrate_database() {
 run_dev() {
   configure_env
   install_dependencies
+  check_telegram_proxy
   start_data_services
   migrate_database
   log "Start local development server at http://localhost:3000"
@@ -241,6 +252,7 @@ run_dev() {
 run_docker() {
   configure_env
   install_dependencies
+  check_telegram_proxy
   start_data_services
   migrate_database
   log "Build and start application container at http://localhost:3000"

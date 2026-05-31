@@ -12,6 +12,7 @@ services:
       - TELEGRAM_OIDC_CLIENT_ID=${TELEGRAM_OIDC_CLIENT_ID}
       - TELEGRAM_OIDC_CLIENT_SECRET=${TELEGRAM_OIDC_CLIENT_SECRET}
       - TELEGRAM_OIDC_REDIRECT_URI=${TELEGRAM_OIDC_REDIRECT_URI:-http://localhost:3000/api/auth/telegram/callback}
+      - TELEGRAM_SOCKS_PROXY_URL=${TELEGRAM_SOCKS_PROXY_URL:-}
       - DATABASE_URL=postgres://tga:tga@db:5432/tga
       - REDIS_URL=redis://redis:6379
     depends_on:

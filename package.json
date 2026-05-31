@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:migrate": "drizzle-kit migrate",
+    "proxy:check": "node ./scripts/check-telegram-proxy.mjs",
     "setup": "bash ./scripts/setup-and-run.sh"
   },
   "dependencies": {
@@ -19,9 +20,11 @@
     "ioredis": "^5.11.0",
     "jose": "^6.2.3",
     "next": "^16.2.6",
+    "node-fetch": "^3.3.2",
     "postgres": "^3.4.9",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "socks-proxy-agent": "^8.0.5",
     "telegram": "^2.22.2",
     "zod": "^4.4.3"
   },

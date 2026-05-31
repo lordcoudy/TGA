@@ -22,6 +22,21 @@ It creates or updates `.env`, generates the encryption key when needed, starts P
 
 Telegram credentials may be left blank when only browser-side JSON analysis is needed. Configure Telegram API credentials and Telegram OIDC credentials from BotFather to enable accounts, saved reports, and MTProto fetching.
 
+If the server network blocks Telegram, configure an external SOCKS5 proxy:
+
+```env
+TELEGRAM_SOCKS_PROXY_URL=socks5h://user:password@proxy.example.com:1080
+```
+
+Prefer `socks5h://` so Telegram DNS resolution also goes through the proxy. URL-encode special characters in the username and password. The proxy is used only for Telegram OIDC, JWKS, and MTProto traffic. Verify connectivity before rebuilding the app:
+
+```bash
+npm run proxy:check
+docker compose up -d --build app
+```
+
+Any HTTP response from the Telegram token endpoint means the network path works. After changing the proxy, restart Telegram login from the beginning because authorization codes are single-use.
+
 Open `http://localhost:3000`.
 
 ## Services
@@ -38,6 +53,7 @@ Open `http://localhost:3000`.
 - `npm run test:e2e` - Playwright browser tests
 - `npm run build` - production build
 - `npm run db:migrate` - apply Drizzle migrations
+- `npm run proxy:check` - verify direct or SOCKS5 connectivity to Telegram
 - `npm run setup` - interactive configuration and launcher
 
 The launcher can also be scripted:

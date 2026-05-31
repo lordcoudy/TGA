@@ -4,6 +4,7 @@ import { Api, TelegramClient } from "telegram";
 import { computeCheck } from "telegram/Password";
 import { StringSession } from "telegram/sessions";
 import { requireEnv } from "./server/env";
+import { telegramSocksProxy } from "./server/telegram-proxy";
 
 function telegramEnv() {
 	const apiId = Number(requireEnv("TELEGRAM_API_ID"));
@@ -14,10 +15,12 @@ function telegramEnv() {
 
 function makeClient(session = "", testDc = false) {
 	const { apiId, apiHash } = telegramEnv();
+	const proxy = telegramSocksProxy()?.gramjs;
 	return new TelegramClient(new StringSession(session), apiId, apiHash, {
 		connectionRetries: 5,
 		useWSS: false,
 		testServers: testDc,
+		proxy,
 	});
 }
 

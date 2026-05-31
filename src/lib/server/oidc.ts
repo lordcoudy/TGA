@@ -1,10 +1,13 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, customFetch, jwtVerify } from "jose";
 import { optionalEnv, requireEnv } from "./env";
+import { telegramFetch } from "./telegram-proxy";
 
-const jwks = createRemoteJWKSet(new URL("https://oauth.telegram.org/.well-known/jwks.json"));
+const jwks = createRemoteJWKSet(new URL("https://oauth.telegram.org/.well-known/jwks.json"), {
+	[customFetch]: async (url, options) => telegramFetch(url, options) as unknown as Promise<Response>,
+});
 
 export function telegramOidcConfig() {
 	const clientId = requireEnv("TELEGRAM_OIDC_CLIENT_ID");
@@ -31,16 +34,15 @@ export async function exchangeTelegramCode(code: string, verifier: string): Prom
 	const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
 	let response: Response;
 	try {
-		response = await fetch("https://oauth.telegram.org/token", {
+		response = await telegramFetch("https://oauth.telegram.org/token", {
 			method: "POST",
 			headers: {
 				"content-type": "application/x-www-form-urlencoded",
 				authorization: `Basic ${credentials}`,
 			},
 			body,
-			cache: "no-store",
 			signal: AbortSignal.timeout(10_000),
-		});
+		}) as unknown as Response;
 	} catch (error) {
 		console.error("Telegram OIDC token endpoint request failed", error);
 		throw new Error("Cannot reach https://oauth.telegram.org/token from the server. Check outbound HTTPS access, firewall, or proxy settings.");
