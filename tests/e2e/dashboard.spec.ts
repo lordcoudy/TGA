@@ -28,8 +28,17 @@ test("renders dialogue analytics from a local JSON upload without message text",
 		})),
 	});
 	await expect(page.getByText("Структура диалогов")).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Карточка участника" })).toBeVisible();
 	await expect(page.getByText("Явные replies")).toBeVisible();
 	await expect(page.getByText("Неполные replies")).toBeVisible();
+	const periodSelect = page.locator("select").filter({ has: page.locator('option[value="7d"]') });
+	await periodSelect.selectOption("7d");
+	await expect(periodSelect).toHaveValue("7d");
+	const [download] = await Promise.all([
+		page.waitForEvent("download"),
+		page.getByText("Скачать карточку PNG").click(),
+	]);
+	expect(download.suggestedFilename()).toContain("Alice-7d");
 	await expect(page.getByText("secret start")).toHaveCount(0);
 	await expect(page.getByText("700001")).toHaveCount(0);
 });

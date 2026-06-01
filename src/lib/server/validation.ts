@@ -29,6 +29,37 @@ const dialogueStatsSchema = z.object({
 	topStarters: z.array(z.object({ name: z.string(), descendants: z.number().int().nonnegative(), threads: z.number().int().nonnegative() }).strict()).max(10),
 	largestThreads: z.array(dialogueThreadSchema).max(5),
 }).strict();
+const participantCardPeriodSchema = z.enum(["all", "7d", "30d", "90d"]);
+const participantCardMetricsSchema = z.object({
+	messageCount: z.number().int().nonnegative(),
+	messageShare: z.number().min(0).max(1),
+	rank: z.number().int().positive().nullable(),
+	activeDays: z.number().int().nonnegative(),
+	messagesPerActiveDay: z.number().nonnegative(),
+	avgLength: z.object({ characters: z.number().nonnegative(), words: z.number().nonnegative() }).strict(),
+	favoriteHourUtc: z.number().int().min(0).max(23).nullable(),
+	favoriteWeekday: z.enum(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]).nullable(),
+	topWords: z.array(countItem.extend({ word: z.string() }).strict()).max(5),
+	topics: z.array(z.object({ label: z.string(), score: z.number(), count: z.number().nonnegative() }).strict()).max(5),
+	topEmojis: z.array(countItem.extend({ emoji: z.string() }).strict()).max(5),
+	topStickers: z.array(countItem.extend({ sticker: z.string() }).strict()).max(5),
+	explicitReplies: z.number().int().nonnegative(),
+	inferredReplies: z.number().int().nonnegative(),
+	startedThreads: z.number().int().nonnegative(),
+	threadDescendants: z.number().int().nonnegative(),
+}).strict();
+const participantCardsSchema = z.object({
+	anchorDate: z.string().nullable(),
+	participants: z.array(z.object({
+		name: z.string(),
+		periods: z.object({
+			all: participantCardMetricsSchema,
+			"7d": participantCardMetricsSchema,
+			"30d": participantCardMetricsSchema,
+			"90d": participantCardMetricsSchema,
+		}).strict(),
+	}).strict()).max(100),
+}).strict();
 const analysisResultSchema = z.object({
 	title: z.string(),
 	chatCount: z.number().int().nonnegative(),
@@ -58,6 +89,7 @@ const analysisResultSchema = z.object({
 		linkCount: z.number().nonnegative(),
 		avgLength: z.object({ characters: z.number(), words: z.number() }).strict(),
 		dialogues: dialogueStatsSchema.optional(),
+		participantCards: participantCardsSchema.optional(),
 	}).strict()),
 }).strict();
 
@@ -82,4 +114,11 @@ export const reportSchema = z.object({
 	title: z.string().trim().min(1).max(160),
 	source: z.enum(["json", "mtproto"]),
 	analysis: analysisResultSchema,
+}).strict();
+
+export const sharedParticipantCardSchema = z.object({
+	participantName: z.string().trim().min(1).max(160),
+	period: participantCardPeriodSchema,
+	anchorDate: z.string().nullable(),
+	metrics: participantCardMetricsSchema,
 }).strict();

@@ -69,6 +69,36 @@ export type ChatStats = {
 	linkCount: number;
 	avgLength: { characters: number; words: number };
 	dialogues?: DialogueStats;
+	participantCards?: ParticipantCards;
+};
+
+export type ParticipantCardPeriod = "all" | "7d" | "30d" | "90d";
+
+export type ParticipantCards = {
+	anchorDate: string | null;
+	participants: {
+		name: string;
+		periods: Record<ParticipantCardPeriod, ParticipantCardMetrics>;
+	}[];
+};
+
+export type ParticipantCardMetrics = {
+	messageCount: number;
+	messageShare: number;
+	rank: number | null;
+	activeDays: number;
+	messagesPerActiveDay: number;
+	avgLength: { characters: number; words: number };
+	favoriteHourUtc: number | null;
+	favoriteWeekday: string | null;
+	topWords: { word: string; count: number }[];
+	topics: { label: string; score: number; count: number }[];
+	topEmojis: { emoji: string; count: number }[];
+	topStickers: { sticker: string; count: number }[];
+	explicitReplies: number;
+	inferredReplies: number;
+	startedThreads: number;
+	threadDescendants: number;
 };
 
 export type DialogueStats = {
@@ -266,6 +296,7 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 		return leftDate.localeCompare(rightDate);
 	});
 	const dialogueStats = buildDialogueStats(messages, quickReplyWindowMinutes);
+	const participantCards = buildParticipantCards(messages, quickReplyWindowMinutes);
 
 	for (const message of messages) {
 		if (message.type && message.type !== "message") continue;
@@ -305,9 +336,7 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 			}
 		}
 
-		const stickerEmoji = message.sticker_emoji
-			|| (message as { stickerEmoji?: string }).stickerEmoji
-			|| (message as { media_emoji?: string }).media_emoji;
+		const stickerEmoji = getStickerEmoji(message);
 		if (stickerEmoji) {
 			stickerCounts.set(stickerEmoji, (stickerCounts.get(stickerEmoji) || 0) + 1);
 		}
@@ -403,7 +432,223 @@ function analyzeChat(chat: ChatExport, options: AnalyzeOptions): ChatStats {
 			words: textMessageCount === 0 ? 0 : Math.round(totalWords / textMessageCount),
 		},
 		dialogues: dialogueStats,
+		participantCards,
 	};
+}
+
+function buildParticipantCards(messages: RawMessage[], quickReplyWindowMinutes: number): ParticipantCards {
+	const analyzableMessages = messages.filter((message) => !message.type || message.type === "message");
+	const overallCounts = new Map<string, number>();
+	for (const message of analyzableMessages) {
+		const author = messageAuthor(message);
+		overallCounts.set(author, (overallCounts.get(author) || 0) + 1);
+	}
+	const participants = toTopList(overallCounts, 100).map(({ key }) => key);
+	const anchorDate = latestMessageDate(analyzableMessages);
+	const periodMessages: Record<ParticipantCardPeriod, RawMessage[]> = {
+		all: analyzableMessages,
+		"7d": filterRecentMessages(analyzableMessages, anchorDate, 7),
+		"30d": filterRecentMessages(analyzableMessages, anchorDate, 30),
+		"90d": filterRecentMessages(analyzableMessages, anchorDate, 90),
+	};
+	const metrics = Object.fromEntries(Object.entries(periodMessages).map(([period, entries]) => [
+		period,
+		buildParticipantPeriodMetrics(entries, participants, quickReplyWindowMinutes),
+	])) as Record<ParticipantCardPeriod, Map<string, ParticipantCardMetrics>>;
+
+	return {
+		anchorDate: anchorDate?.toISOString() || null,
+		participants: participants.map((name) => ({
+			name,
+			periods: Object.fromEntries((Object.keys(periodMessages) as ParticipantCardPeriod[]).map((period) => [
+				period,
+				metrics[period].get(name) || emptyParticipantCardMetrics(),
+			])) as Record<ParticipantCardPeriod, ParticipantCardMetrics>,
+		})),
+	};
+}
+
+type ParticipantCardAccumulator = {
+	messageCount: number;
+	dayCounts: Map<string, number>;
+	hourCounts: Map<number, number>;
+	weekdayCounts: Map<number, number>;
+	wordCounts: Map<string, number>;
+	emojiCounts: Map<string, number>;
+	stickerCounts: Map<string, number>;
+	totalChars: number;
+	totalWords: number;
+	textMessageCount: number;
+	explicitReplies: number;
+	inferredReplies: number;
+};
+
+function buildParticipantPeriodMetrics(
+	messages: RawMessage[],
+	participants: string[],
+	quickReplyWindowMinutes: number,
+): Map<string, ParticipantCardMetrics> {
+	const participantSet = new Set(participants);
+	const accumulators = new Map<string, ParticipantCardAccumulator>();
+	let previousDatedMessage: { date: Date; author: string } | null = null;
+	for (const message of messages) {
+		const author = messageAuthor(message);
+		const date = parsedMessageDate(message);
+		if (!hasExplicitReply(message) && participantSet.has(author) && date && previousDatedMessage && previousDatedMessage.author !== author) {
+			const delay = (date.getTime() - previousDatedMessage.date.getTime()) / 60000;
+			if (delay > 0 && delay <= quickReplyWindowMinutes) participantAccumulator(accumulators, author).inferredReplies += 1;
+		}
+		if (date) previousDatedMessage = { date, author };
+		if (!participantSet.has(author)) continue;
+
+		const stats = participantAccumulator(accumulators, author);
+		stats.messageCount += 1;
+		if (hasExplicitReply(message)) stats.explicitReplies += 1;
+		const day = getMessageDay(message);
+		if (day) stats.dayCounts.set(day, (stats.dayCounts.get(day) || 0) + 1);
+		if (date) {
+			stats.hourCounts.set(date.getUTCHours(), (stats.hourCounts.get(date.getUTCHours()) || 0) + 1);
+			stats.weekdayCounts.set(date.getUTCDay(), (stats.weekdayCounts.get(date.getUTCDay()) || 0) + 1);
+		}
+		const sticker = getStickerEmoji(message);
+		if (sticker) stats.stickerCounts.set(sticker, (stats.stickerCounts.get(sticker) || 0) + 1);
+		const text = normalizeText(message.text ?? "");
+		if (!text) continue;
+		const { cleaned } = stripLinks(text);
+		if (cleaned) {
+			stats.totalChars += cleaned.length;
+			stats.textMessageCount += 1;
+		}
+		const words = extractWords(cleaned);
+		stats.totalWords += words.length;
+		for (const word of words) stats.wordCounts.set(word, (stats.wordCounts.get(word) || 0) + 1);
+		for (const match of cleaned.matchAll(emojiMatcher)) {
+			stats.emojiCounts.set(match[0], (stats.emojiCounts.get(match[0]) || 0) + 1);
+		}
+	}
+
+	const ranks = new Map(Array.from(accumulators.entries())
+		.sort((left, right) => right[1].messageCount - left[1].messageCount || left[0].localeCompare(right[0]))
+		.map(([name], index) => [name, index + 1]));
+	const starters = buildStarterTotals(messages);
+	return new Map(participants.map((name) => {
+		const stats = accumulators.get(name);
+		if (!stats) return [name, emptyParticipantCardMetrics()];
+		const starter = starters.get(name) || { descendants: 0, threads: 0 };
+		return [name, {
+			messageCount: stats.messageCount,
+			messageShare: messages.length === 0 ? 0 : Number((stats.messageCount / messages.length).toFixed(4)),
+			rank: ranks.get(name) || null,
+			activeDays: stats.dayCounts.size,
+			messagesPerActiveDay: stats.dayCounts.size === 0 ? 0 : Number((stats.messageCount / stats.dayCounts.size).toFixed(2)),
+			avgLength: {
+				characters: stats.textMessageCount === 0 ? 0 : Math.round(stats.totalChars / stats.textMessageCount),
+				words: stats.textMessageCount === 0 ? 0 : Math.round(stats.totalWords / stats.textMessageCount),
+			},
+			favoriteHourUtc: topNumericKey(stats.hourCounts),
+			favoriteWeekday: weekdayName(topNumericKey(stats.weekdayCounts)),
+			topWords: toTopList(stats.wordCounts, 5).map(({ key, count }) => ({ word: key, count })),
+			topics: buildTopics(stats.wordCounts, 5),
+			topEmojis: toTopList(stats.emojiCounts, 5).map(({ key, count }) => ({ emoji: key, count })),
+			topStickers: toTopList(stats.stickerCounts, 5).map(({ key, count }) => ({ sticker: key, count })),
+			explicitReplies: stats.explicitReplies,
+			inferredReplies: stats.inferredReplies,
+			startedThreads: starter.threads,
+			threadDescendants: starter.descendants,
+		}];
+	}));
+}
+
+function latestMessageDate(messages: RawMessage[]) {
+	let latest: Date | null = null;
+	for (const message of messages) {
+		const date = parsedMessageDate(message);
+		if (date && (!latest || date > latest)) latest = date;
+	}
+	return latest;
+}
+
+function filterRecentMessages(messages: RawMessage[], anchor: Date | null, days: number) {
+	if (!anchor) return [];
+	const cutoff = anchor.getTime() - days * 24 * 60 * 60 * 1000;
+	return messages.filter((message) => {
+		const date = parsedMessageDate(message);
+		return date && date.getTime() >= cutoff && date <= anchor;
+	});
+}
+
+function participantAccumulator(accumulators: Map<string, ParticipantCardAccumulator>, name: string) {
+	const existing = accumulators.get(name);
+	if (existing) return existing;
+	const created: ParticipantCardAccumulator = {
+		messageCount: 0,
+		dayCounts: new Map(),
+		hourCounts: new Map(),
+		weekdayCounts: new Map(),
+		wordCounts: new Map(),
+		emojiCounts: new Map(),
+		stickerCounts: new Map(),
+		totalChars: 0,
+		totalWords: 0,
+		textMessageCount: 0,
+		explicitReplies: 0,
+		inferredReplies: 0,
+	};
+	accumulators.set(name, created);
+	return created;
+}
+
+function emptyParticipantCardMetrics(): ParticipantCardMetrics {
+	return {
+		messageCount: 0,
+		messageShare: 0,
+		rank: null,
+		activeDays: 0,
+		messagesPerActiveDay: 0,
+		avgLength: { characters: 0, words: 0 },
+		favoriteHourUtc: null,
+		favoriteWeekday: null,
+		topWords: [],
+		topics: [],
+		topEmojis: [],
+		topStickers: [],
+		explicitReplies: 0,
+		inferredReplies: 0,
+		startedThreads: 0,
+		threadDescendants: 0,
+	};
+}
+
+function buildStarterTotals(messages: RawMessage[]) {
+	const indexed = new Map<string, RawMessage>();
+	for (const message of messages) {
+		const id = messageKey(message.id);
+		if (id) indexed.set(id, message);
+	}
+	const totals = new Map<string, { descendants: number; threads: number }>();
+	for (const thread of buildThreadSummaries(messages, indexed)) {
+		const current = totals.get(thread.starter) || { descendants: 0, threads: 0 };
+		current.descendants += thread.descendants;
+		current.threads += 1;
+		totals.set(thread.starter, current);
+	}
+	return totals;
+}
+
+function topNumericKey(counts: Map<number, number>) {
+	let result: number | null = null;
+	let max = 0;
+	for (const [key, count] of counts) {
+		if (count > max || (count === max && (result === null || key < result))) {
+			result = key;
+			max = count;
+		}
+	}
+	return result;
+}
+
+function weekdayName(day: number | null) {
+	return day === null ? null : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day];
 }
 
 function buildDialogueStats(
@@ -534,6 +779,12 @@ function hasExplicitReply(message: RawMessage) {
 
 function messageAuthor(message: RawMessage) {
 	return message.from || message.from_id || "Unknown";
+}
+
+function getStickerEmoji(message: RawMessage) {
+	return message.sticker_emoji
+		|| (message as { stickerEmoji?: string }).stickerEmoji
+		|| (message as { media_emoji?: string }).media_emoji;
 }
 
 function parsedMessageDate(message: RawMessage) {

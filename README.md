@@ -8,6 +8,7 @@ Public multi-user Telegram chat analytics with privacy-first JSON uploads and op
 - MTProto fetching temporarily processes messages on the server and returns only aggregates.
 - Raw messages are never stored in Postgres.
 - Reports are stored only after an explicit user action and can be deleted from the UI.
+- Participant cards can be published explicitly as aggregate-only links. Public links expire after 30 days and can be revoked earlier.
 - MTProto session strings are encrypted with AES-256-GCM and never returned to the browser.
 
 ## Setup
@@ -43,6 +44,7 @@ Open `http://localhost:3000`.
 
 - Next.js App Router UI and API
 - Postgres with Drizzle ORM for users, web sessions, encrypted Telegram connections, and aggregate reports
+- Aggregate-only participant card snapshots with hashed public tokens and 30-day expiration
 - Redis for OIDC state, MTProto code state, and API rate limiting
 
 ## Scripts

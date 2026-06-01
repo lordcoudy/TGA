@@ -138,4 +138,50 @@ describe("analyzeTelegramExport", () => {
 		expect(thread?.nodes).toHaveLength(100);
 		expect(thread?.nodes.at(-1)?.id).toBe("n100");
 	});
+
+	it("builds participant cards for reproducible periods anchored to the latest message", () => {
+		const chat = analyze([
+			{ id: 1, type: "message", date: "2024-01-01T10:00:00Z", from: "Alice", text: "old message" },
+			{ id: 2, type: "message", date: "2024-03-25T10:00:00Z", from: "Alice", text: "recent useful 👍", sticker_emoji: "👍" },
+			{ id: 3, type: "message", date: "2024-03-31T12:00:00Z", from: "Bob", text: "question" },
+			{ id: 4, type: "message", date: "2024-03-31T12:02:00Z", from: "Alice", text: "useful reply 👍", reply_to_message_id: 3 },
+		]);
+		expect(chat.participantCards?.anchorDate).toBe("2024-03-31T12:02:00.000Z");
+		const alice = chat.participantCards?.participants.find((participant) => participant.name === "Alice");
+		expect(alice?.periods.all).toMatchObject({
+			messageCount: 3,
+			rank: 1,
+			activeDays: 3,
+			explicitReplies: 1,
+			topEmojis: [{ emoji: "👍", count: 2 }],
+		});
+		expect(alice?.periods["7d"]).toMatchObject({ messageCount: 2, rank: 1, activeDays: 2 });
+		expect(alice?.periods["30d"]).toMatchObject({ messageCount: 2, rank: 1 });
+		expect(alice?.periods["90d"]).toMatchObject({ messageCount: 2, rank: 1 });
+	});
+
+	it("limits participant cards to the 100 most active authors", () => {
+		const messages = Array.from({ length: 105 }, (_, index) => ({
+			id: index + 1,
+			type: "message",
+			from: `User ${String(index).padStart(3, "0")}`,
+			text: "hello",
+		}));
+		messages.push({ id: 1000, type: "message", from: "User 104", text: "second" });
+		const participants = analyze(messages).participantCards?.participants || [];
+		expect(participants).toHaveLength(100);
+		expect(participants[0].name).toBe("User 104");
+		expect(participants.some((participant) => participant.name === "User 098")).toBe(true);
+		expect(participants.some((participant) => participant.name === "User 099")).toBe(false);
+	});
+
+	it("keeps participant card aggregates free from raw message text, ids, and links", () => {
+		const chat = analyze([
+			{ id: 987654, type: "message", date: "2024-01-01T10:00:00Z", from: "Alice", text: "private phrase https://example.com/private" },
+		]);
+		const serialized = JSON.stringify(chat.participantCards);
+		expect(serialized).not.toContain("987654");
+		expect(serialized).not.toContain("private phrase");
+		expect(serialized).not.toContain("https://");
+	});
 });

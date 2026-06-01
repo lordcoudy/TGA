@@ -1,14 +1,17 @@
 "use client";
 
 import type { ChatStats } from "@/lib/telegram";
+import type { WebUser } from "./AuthPanel";
 import DialoguesDashboard from "./DialoguesDashboard";
 import type { getDictionary } from "./i18n";
+import ParticipantCardsPanel from "./ParticipantCardsPanel";
 
 type Dictionary = ReturnType<typeof getDictionary>;
 
-export default function StatsDashboard({ chat, dict }: { chat: ChatStats; dict: Dictionary }) {
+export default function StatsDashboard({ chat, user, dict }: { chat: ChatStats; user: WebUser | null; dict: Dictionary }) {
 	return (
 		<div className="space-y-4">
+			<ParticipantCardsPanel chat={chat} user={user} dict={dict} />
 			<DialoguesDashboard dialogues={chat.dialogues} dict={dict} />
 			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 				<ListCard title={dict.words} items={chat.topWords.map((item) => [item.word, item.count])} />

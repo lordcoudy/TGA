@@ -8,6 +8,13 @@
       "when": 1780240000000,
       "tag": "0000_public_launch",
       "breakpoints": false
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780334400000,
+      "tag": "0001_shared_participant_cards",
+      "breakpoints": false
     }
   ]
 }

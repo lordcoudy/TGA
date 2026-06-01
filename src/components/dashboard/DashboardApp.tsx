@@ -74,7 +74,7 @@ export default function DashboardApp() {
 					<div className="flex flex-wrap items-center gap-2"><select value={selectedChat.chatId} onChange={(event) => setSelectedChatId(event.target.value)} className="rounded-lg border p-2">{analysis?.chats.map((chat) => <option key={chat.chatId} value={chat.chatId}>{chat.title}</option>)}</select><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => downloadCsv(selectedChat)}>{dict.downloadCsv}</button><button className="rounded-lg border px-3 py-2 text-sm" onClick={() => exportRef.current && void downloadPng(exportRef.current, selectedChat.title)}>{dict.downloadPng}</button></div>
 					<div className="grid gap-3 sm:grid-cols-3"><Metric label={dict.messages} value={selectedChat.messageCount} /><Metric label={dict.participants} value={selectedChat.participantCount} /><Metric label={dict.chats} value={analysis?.chatCount || 0} /></div>
 					<label className="block rounded-xl border bg-white p-3 text-sm">{dict.search}<input className="ml-3 rounded border p-1" value={word} onChange={(event) => setWord(event.target.value)} /> <strong>{word ? selectedChat.wordFrequencies[word.trim().toLowerCase()] || 0 : ""}</strong></label>
-					<StatsDashboard chat={selectedChat} dict={dict} />
+					<StatsDashboard chat={selectedChat} user={user} dict={dict} />
 				</div> : <p className="py-8 text-center text-slate-500">{dict.noData}</p>}
 			</div>
 		</main>
